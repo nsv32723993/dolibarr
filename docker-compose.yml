@@ -1,0 +1,27 @@
+services:
+  dolibarr:
+    image: dolibarr/dolibarr:latest
+    container_name: dolibarr-app
+    ports:
+      - "8080:80"
+    environment:
+      DOLI_DB_TYPE: pgsql
+      DOLI_DB_HOST: postgres
+      DOLI_DB_PORT: 5432
+      DOLI_DB_NAME: dolibarr
+      DOLI_DB_USER: dolibarr
+      DOLI_DB_PASSWORD: dolibarr
+      DOLI_URL_ROOT: http://localhost:8080
+      DOLI_PROD: 0
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    container_name: dolibarr-postgres
+    environment:
+      POSTGRES_DB: dolibarr
+      POSTGRES_USER: dolibarr
+      POSTGRES_PASSWORD: dolibarr
+    ports:
+      - "5432:5432"
