@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import inbound, outbound, inventory
+from routers import inbound, outbound, inventory, dolibarr_test
 from core.database import Base, engine
 import uvicorn
 
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(inbound.router, prefix="/api/v1", tags=["Inbound"])
 app.include_router(outbound.router, prefix="/api/v1", tags=["Outbound"])
 app.include_router(inventory.router, prefix="/api/v1", tags=["Inventory"])
+app.include_router(dolibarr_test.router, prefix="/api/v1", tags=["Dolibarr"])
 
 @app.get("/")
 def home():
