@@ -1,0 +1,504 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║          📊 ANÁLISIS COMPLETO - ARQUITECTURA Y FUNCIONES APP WMS              ║
+║                                                                                ║
+║                    Carpeta: app/ | Enero 2026                                 ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+🎯 RESUMEN EJECUTIVO - 30 SEGUNDOS
+════════════════════════════════════════════════════════════════════════════════
+
+¿Qué es?
+  Una API REST (FastAPI) que conecta tu almacén WMS con Dolibarr ERP.
+
+¿Por qué?
+  Automatizar recepción, picking e inventario usando datos de Dolibarr
+  sin modificar la base de datos de Dolibarr (solo lectura).
+
+¿Cómo?
+  
+  Dolibarr DB ─── [API WMS] ──→ WMS Local DB
+    (lectura)       (FastAPI)     (lectura/escritura)
+
+¿Qué puede hacer?
+  ✅ Recibir mercadería con foto      (POST /api/v1/receive)
+  ✅ Crear órdenes de picking         (GET /api/v1/orders)
+  ✅ Verificar stock en tiempo real    (GET /api/v1/check/{barcode})
+  ✅ Crear movimientos en Dolibarr    (automático)
+  ✅ Multi-tenant (clientes separados) (por implementar)
+
+
+════════════════════════════════════════════════════════════════════════════════
+📁 ESTRUCTURA - CARPETA POR CARPETA
+════════════════════════════════════════════════════════════════════════════════
+
+📂 app/
+│
+├─ 🎯 main.py
+│  └─ Aplicación FastAPI principal
+│     ├─ Crea app = FastAPI()
+│     ├─ Configura CORS (seguridad)
+│     ├─ Monta routers
+│     ├─ Define /health y / endpoints
+│     └─ Crea tablas WMS en BD local
+│
+├─ 🔐 .env
+│  └─ Credenciales (NO comitear a git)
+│     ├─ DOLIBARR_DB_HOST=localhost
+│     ├─ DOLIBARR_DB_USER=dolibarr
+│     ├─ DOLIBARR_DB_PASSWORD=***
+│     └─ (Auto-generado por auto_detect_postgres.py)
+│
+├─ ⚙️ core/
+│  │
+│  ├─ config.py
+│  │  └─ Settings (Pydantic BaseSettings)
+│  │     ├─ Lee variables .env
+│  │     ├─ Construye DATABASE_URL
+│  │     └─ Centraliza configuración
+│  │
+│  ├─ database.py
+│  │  └─ 2 conexiones a BD
+│  │     ├─ dolibarr_engine (READ-ONLY)
+│  │     │  └─ PostgreSQL Dolibarr
+│  │     │     ├─ pool_size=5 (conexiones)
+│  │     │     └─ 276 tablas disponibles
+│  │     │
+│  │     ├─ wms_engine (READ/WRITE)
+│  │     │  └─ SQLite WMS local
+│  │     │     ├─ pool_size=10 (más conexiones)
+│  │     │     └─ Tablas de negocio
+│  │     │
+│  │     └─ Funciones:
+│  │        ├─ get_dolibarr_db() → Factory sesión
+│  │        └─ get_wms_db() → Factory sesión
+│  │
+│  ├─ middleware.py
+│  │  └─ Multi-tenant (por implementar)
+│  │     ├─ Aislar datos por cliente
+│  │     └─ get_tenant_from_token()
+│  │
+│  └─ client_dolibarr.py
+│     └─ Cliente HTTP (optional)
+│        ├─ Para llamadas REST a Dolibarr API
+│        └─ (Alternativa a queries directas)
+│
+├─ 🛣️ routers/ (Endpoints HTTP)
+│  │
+│  ├─ inbound.py
+│  │  └─ POST /api/v1/receive
+│  │     ├─ Parámetros:
+│  │     │  ├─ product_ref: str (ej: "PROD001")
+│  │     │  ├─ warehouse_id: int (ej: 1)
+│  │     │  ├─ qty: float (ej: 100.5)
+│  │     │  └─ evidence: UploadFile (foto)
+│  │     │
+│  │     ├─ Flujo:
+│  │     │  1. Busca producto en Dolibarr
+│  │     │  2. Valida que existe
+│  │     │  3. Guarda foto localmente
+│  │     │  4. Crea movimiento en Dolibarr
+│  │     │  5. Retorna respuesta
+│  │     │
+│  │     └─ Respuesta:
+│  │        {
+│  │          "status": "success",
+│  │          "product_id": 123,
+│  │          "quantity": 100
+│  │        }
+│  │
+│  ├─ outbound.py
+│  │  ├─ GET /api/v1/orders
+│  │  │  ├─ Obtiene órdenes pending
+│  │  │  └─ Retorna lista con líneas
+│  │  │
+│  │  └─ POST /api/v1/orders/{id}/close
+│  │     ├─ Crea envío (shipment)
+│  │     ├─ Descuenta stock automáticamente
+│  │     └─ Retorna { "status": "shipped" }
+│  │
+│  ├─ inventory.py
+│  │  └─ GET /api/v1/check/{barcode}
+│  │     ├─ Busca producto por barcode
+│  │     ├─ Obtiene stock por almacén
+│  │     └─ Retorna desglose detallado
+│  │
+│  ├─ picking.py (extensión)
+│  │  └─ Picking avanzado (no implementado)
+│  │
+│  ├─ dashboard.py (extensión)
+│  │  └─ Reportes KPI (no implementado)
+│  │
+│  └─ dolibarr_test.py
+│     └─ Endpoints de prueba
+│        ├─ GET /api/v1/dolibarr/test-connection
+│        └─ GET /api/v1/dolibarr/info
+│
+├─ 🔧 services/
+│  │
+│  └─ dolibarr_service.py
+│     └─ Clase DolibarrService
+│        ├─ __init__(db: Session)
+│        │
+│        ├─ Métodos de BÚSQUEDA:
+│        │  ├─ get_product_by_ref(ref: str)
+│        │  │  └─ SELECT * FROM llx_product WHERE ref = ?
+│        │  │
+│        │  ├─ get_product_by_barcode(barcode: str)
+│        │  │  └─ SELECT * FROM llx_product WHERE barcode = ?
+│        │  │
+│        │  ├─ search_products(term: str, limit: int)
+│        │  │  └─ SELECT * LIKE %term% (ref, label, desc, barcode)
+│        │  │
+│        │  └─ get_companies(limit: int)
+│        │     └─ SELECT * FROM llx_societe LIMIT ?
+│        │
+│        ├─ Métodos de STOCK:
+│        │  ├─ get_product_stock(product_id, warehouse_id=None)
+│        │  │  └─ SELECT stock FROM llx_product_stock
+│        │  │     GROUP BY warehouse (desglose)
+│        │  │
+│        │  └─ get_total_stock(product_id)
+│        │     └─ SELECT SUM(stock) FROM llx_product_stock
+│        │
+│        ├─ Métodos de ÓRDENES:
+│        │  ├─ get_pending_orders(warehouse_id=None)
+│        │  │  └─ SELECT * FROM llx_commande WHERE status=1
+│        │  │
+│        │  └─ get_order_lines(order_id)
+│        │     └─ SELECT * FROM llx_commandedet WHERE order_id=?
+│        │
+│        └─ Métodos de MOVIMIENTOS:
+│           └─ create_stock_movement(product_id, warehouse_id, qty)
+│              └─ INSERT INTO llx_stock_mouvement
+│
+├─ 📊 models/ (Esquemas de datos)
+│  │
+│  ├─ schemas.py (Pydantic - HTTP)
+│  │  └─ Validación de requests/responses
+│  │     ├─ ProductBase
+│  │     │  ├─ ref: str
+│  │     │  ├─ label: str
+│  │     │  └─ barcode: Optional[str]
+│  │     │
+│  │     ├─ OrderItem
+│  │     │  ├─ product_id: int
+│  │     │  ├─ product_ref: str
+│  │     │  ├─ qty_asked: int
+│  │     │  └─ qty_shipped: int = 0
+│  │     │
+│  │     ├─ OrderResponse
+│  │     │  ├─ order_id: int
+│  │     │  ├─ ref: str
+│  │     │  └─ items: List[OrderItem]
+│  │     │
+│  │     └─ StockCheckResponse
+│  │        ├─ ref: str
+│  │        ├─ label: str
+│  │        ├─ stock_real: int
+│  │        └─ warehouse_details: List[dict]
+│  │
+│  ├─ dolibarr_models.py (SQLAlchemy - READ-ONLY)
+│  │  └─ Mapeo de tablas Dolibarr
+│  │     ├─ LlxProduct (tabla: llx_product)
+│  │     │  ├─ rowid: int (PK)
+│  │     │  ├─ ref: str (índice)
+│  │     │  ├─ label: str
+│  │     │  ├─ barcode: str (índice)
+│  │     │  ├─ price: DECIMAL
+│  │     │  └─ ... (30+ campos)
+│  │     │
+│  │     ├─ LlxProductStock (tabla: llx_product_stock)
+│  │     │  ├─ rowid: int (PK)
+│  │     │  ├─ fk_product: int (FK)
+│  │     │  ├─ fk_entrepot: int (FK)
+│  │     │  ├─ reel: float (cantidad real)
+│  │     │  └─ ... (6+ campos)
+│  │     │
+│  │     ├─ LlxEntrepot (tabla: llx_entrepot)
+│  │     │  ├─ rowid: int (PK)
+│  │     │  ├─ ref: str
+│  │     │  └─ label: str (nombre almacén)
+│  │     │
+│  │     ├─ LlxCommande (tabla: llx_commande)
+│  │     │  ├─ rowid: int (PK)
+│  │     │  ├─ ref: str
+│  │     │  ├─ fk_statut: int (1=validada)
+│  │     │  ├─ date_commande: datetime
+│  │     │  └─ total_ttc: DECIMAL
+│  │     │
+│  │     ├─ LlxCommandeDet (tabla: llx_commandedet)
+│  │     │  ├─ rowid: int (PK)
+│  │     │  ├─ fk_commande: int (FK order)
+│  │     │  ├─ fk_product: int (FK)
+│  │     │  ├─ qty: float
+│  │     │  └─ product_ref: str
+│  │     │
+│  │     └─ LlxStockMouvement (tabla: llx_stock_mouvement)
+│  │        ├─ rowid: int (PK)
+│  │        ├─ fk_product: int
+│  │        ├─ fk_entrepot: int
+│  │        ├─ qty: float
+│  │        ├─ label: str
+│  │        └─ datec: datetime
+│  │
+│  ├─ database_models.py (SQLAlchemy - WMS)
+│  │  └─ Tablas locales WMS
+│  │     ├─ Tenant (multi-tenant)
+│  │     │  ├─ id: int (PK)
+│  │     │  ├─ name: str
+│  │     │  ├─ subscription_level: str
+│  │     │  └─ is_active: bool
+│  │     │
+│  │     ├─ Location (ubicaciones almacén)
+│  │     │  ├─ id: int (PK)
+│  │     │  ├─ code: str (ej: "A-01-02-03")
+│  │     │  ├─ zone: str (Recepción, Picking, etc.)
+│  │     │  ├─ type: str (estantería, suelo, etc.)
+│  │     │  ├─ capacity: float
+│  │     │  └─ current_occupancy: float
+│  │     │
+│  │     └─ Product (catálogo local)
+│  │        ├─ id: int (PK)
+│  │        ├─ tenant_id: int (FK)
+│  │        └─ ... (datos espejados de Dolibarr)
+│  │
+│  └─ wms_models.py
+│     └─ Modelos específicos WMS (extensión)
+│
+├─ 🔄 migrations/
+│  │
+│  └─ create_wms_tables.py
+│     └─ Script de inicialización
+│        ├─ Crea tablas WMS la primera vez
+│        └─ Ejecutar: python -m migrations.create_wms_tables
+│
+├─ 📋 tests/
+│  │
+│  ├─ test_db_conn.py
+│  │  └─ Prueba conexión básica a PostgreSQL
+│  │
+│  ├─ test_dolibarr_connection.py
+│  │  └─ Inspecciona tabla llx_product
+│  │
+│  ├─ test_endpoints_directly.py
+│  │  └─ Tests endpoints usando TestClient
+│  │
+│  ├─ test_dolibarr_integration.py
+│  │  └─ Suite completa integración
+│  │
+│  └─ run_all_tests.ps1
+│     └─ Automatización PowerShell
+│
+└─ 📚 DOCUMENTACIÓN
+   ├─ ANALISIS_ARQUITECTONICO.md ← Estás leyendo
+   ├─ REFERENCIA_FUNCIONES.md    ← Función por función
+   ├─ GUIA_TESTS.md              ← Cómo correr tests
+   └─ ... (13 documentos más)
+
+
+════════════════════════════════════════════════════════════════════════════════
+⚙️ FLUJOS DE DATOS - LOS 3 CASOS DE USO PRINCIPALES
+════════════════════════════════════════════════════════════════════════════════
+
+FLUJO 1: RECEPCIÓN (INBOUND)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│  Cliente                Router              Service        BD  │
+│  ─────────             ────────             ──────        ──  │
+│                                                                │
+│  POST /receive   ──→  inbound.py  ──→  DolibarrService  │    │
+│  ├─ product_ref         │              ├─ GET producto  │    │
+│  ├─ warehouse_id        │              ├─ VALIDATE qty  │    │
+│  ├─ qty                 │              └─ CREATE mov.   │    │
+│  └─ evidence (foto)     │                               │    │
+│                         ├─ Save photo                   │    │
+│                         ├─ Call service                 │    │
+│                         └─ Return 200 OK                │    │
+│                                                          │    │
+│                    ←──────────────────────────────────←  │    │
+│                    {"status": "success", ...}             │    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+FLUJO 2: PICKING (OUTBOUND)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│  Cliente                Router              Service        BD  │
+│  ─────────             ────────             ──────        ──  │
+│                                                                │
+│  GET /orders     ──→  outbound.py  ──→  DolibarrService  │    │
+│                         │              ├─ GET pending   │    │
+│                         │              │   orders       │    │
+│                         │              └─ GET lines     │    │
+│                         │                               │    │
+│                         ├─ Transform data                │    │
+│                         └─ Return 200 OK                │    │
+│                                                          │    │
+│                    ←──────────────────────────────────←  │    │
+│                    [                                       │    │
+│                      {                                     │    │
+│                        "order_id": 456,                   │    │
+│                        "items": [{...}]                   │    │
+│                      }                                     │    │
+│                    ]                                       │    │
+│                                                                │
+│  (Operario pickea y escanea)                                  │
+│                                                                │
+│  POST /orders/456/close  ──→  CREATE shipment  ──────→  │    │
+│                                 DESCOUNT stock              │    │
+│                                                          │    │
+│                    ←──────────────────────────────────←  │    │
+│                    {"status": "shipped", ...}             │    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+FLUJO 3: INVENTARIO (CHECK STOCK)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│  Cliente                Router              Service        BD  │
+│  ─────────             ────────             ──────        ──  │
+│                                                                │
+│  GET /check/123456  ──→  inventory.py  ──→  DolibarrService  │
+│  (barcode scanned)        │              ├─ GET producto     │
+│                           │              ├─ GET stock/almacén│
+│                           │              └─ CALC total       │
+│                           │                               │    │
+│                           ├─ Format response              │    │
+│                           └─ Return 200 OK                │    │
+│                                                          │    │
+│                    ←──────────────────────────────────←  │    │
+│                    {                                       │    │
+│                      "ref": "PROD001",                    │    │
+│                      "stock_real": 150,                   │    │
+│                      "warehouse_details": [...]          │    │
+│                    }                                       │    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+🎯 DECISIONES ARQUITECTÓNICAS - POR QUÉ ASÍ
+════════════════════════════════════════════════════════════════════════════════
+
+1️⃣ FASTAPI (vs Django, Flask)
+   ├─ ✅ Ultra rápido (async/await nativo)
+   ├─ ✅ API REST enfocado (tu caso perfecto)
+   ├─ ✅ Validación automática (Pydantic)
+   ├─ ✅ Documentación Swagger auto
+   └─ ✅ Moderno y activamente mantenido
+
+2️⃣ DOS BASES DE DATOS SEPARADAS
+   ├─ Dolibarr → LECTURA PURA
+   │  ├─ No modificamos Dolibarr
+   │  ├─ Es la "fuente de verdad"
+   │  └─ Si Dolibarr se actualiza, OK
+   │
+   └─ WMS → LECTURA/ESCRITURA
+      ├─ Datos de operaciones WMS
+      ├─ Independiente de Dolibarr
+      └─ Puedes hacer rollback
+
+3️⃣ ARQUITECTURA EN CAPAS (Separación responsabilidades)
+   ├─ Routers → QUÉ (endpoints HTTP)
+   ├─ Services → CÓMO (lógica de negocio)
+   ├─ Models → CON QUÉ (estructura datos)
+   └─ Database → DÓNDE (conexiones raw)
+   
+   Beneficio: Si cambias BD, solo modifica 1 archivo
+
+4️⃣ SQLALCHEMY ORM
+   ├─ ✅ Type-safe (LlxProduct es objeto, no dict)
+   ├─ ✅ Previene SQL Injection (parametrizado)
+   ├─ ✅ Portable entre bases de datos
+   └─ ✅ Transacciones automáticas
+
+5️⃣ PYDANTIC SCHEMAS
+   ├─ ✅ Validación automática (tipos, rangos)
+   ├─ ✅ Conversión de tipos (string→int)
+   ├─ ✅ Documentación Swagger auto
+   └─ ✅ Error messages claros al cliente
+
+
+════════════════════════════════════════════════════════════════════════════════
+📊 TABLA: ENDPOINT → SERVICIO → BASE DE DATOS
+════════════════════════════════════════════════════════════════════════════════
+
+ENDPOINT                      SERVICE METHOD              SQL / ORM QUERY
+─────────────────────────────────────────────────────────────────────────────
+POST /api/v1/receive          get_product_by_ref()       SELECT FROM llx_product
+                              create_stock_movement()    INSERT INTO llx_stock_mouvement
+
+GET /api/v1/orders            get_pending_orders()       SELECT FROM llx_commande WHERE status=1
+                              get_order_lines()          SELECT FROM llx_commandedet
+
+POST /api/v1/orders/{}/close  create_shipment()         INSERT INTO llx_expeditiondet
+
+GET /api/v1/check/{barcode}   get_product_by_barcode()  SELECT FROM llx_product WHERE barcode=?
+                              get_product_stock()        SELECT FROM llx_product_stock
+
+
+════════════════════════════════════════════════════════════════════════════════
+✨ RESUMEN: POR QUÉ ESTA ARQUITECTURA FUNCIONA
+════════════════════════════════════════════════════════════════════════════════
+
+✅ ESCALABILIDAD
+   - Cambiar BD? Edita database.py nada más
+   - Agregar endpoint? Copia función, nuevo router
+   - Multi-tenant? tenant_id ya en modelos
+
+✅ MANTENIBILIDAD
+   - Nueva validación? → models/schemas.py
+   - Nueva query? → services/dolibarr_service.py
+   - Nuevo endpoint? → routers/nuevo.py
+   
+✅ TESTABILIDAD
+   - Services reciben DB como parámetro
+   - Mock DB fácil para tests unitarios
+   - No depende de BD real
+
+✅ INDEPENDENCIA DE DOLIBARR
+   - Lectura pura (no corrompemos Dolibarr)
+   - WMS funciona aunque Dolibarr esté offline
+   - Datos WMS están protegidos
+
+✅ SEGURIDAD
+   - SQL Injection prevention (ORM)
+   - CORS configurado
+   - Credenciales en .env (no hard-coded)
+   - Dependency injection (sesiones cerradas auto)
+
+
+════════════════════════════════════════════════════════════════════════════════
+🚀 EXTENSIONES FUTURAS (Ya preparada la arquitectura)
+════════════════════════════════════════════════════════════════════════════════
+
+📍 Multi-Tenant
+   ├─ routers/{uuid}/receive  (datos aislados por cliente)
+   └─ Middleware (get_tenant_from_token)
+
+📍 Dashboard/Reportes
+   ├─ KPIs en tiempo real
+   └─ routers/dashboard.py
+
+📍 Webhooks
+   ├─ Dolibarr notifica cambios
+   └─ WMS se sincroniza automáticamente
+
+📍 Múltiples Dolibarr
+   ├─ Soportar varias instancias
+   └─ Config: DOLIBARR_INSTANCES = [...]
+
+════════════════════════════════════════════════════════════════════════════════
+
+👉 SIGUIENTES PASOS:
+
+1. Lee: ANALISIS_ARQUITECTONICO.md (completo)
+2. Lee: REFERENCIA_FUNCIONES.md (función por función)
+3. Ejecuta: python test_db_conn.py (verifica conexión)
+4. Corre: .\run_all_tests.ps1 (todos los tests)
+5. Personaliza: routers/ según tu negocio
+
+════════════════════════════════════════════════════════════════════════════════
