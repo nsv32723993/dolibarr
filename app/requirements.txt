@@ -1,11 +1,38 @@
+# FastAPI y servidor
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
+
+# Validación de datos
 pydantic==2.5.0
 pydantic-settings==2.1.0
+
+# Base de datos
 sqlalchemy==2.0.23
 asyncpg==0.29.0
+psycopg2-binary==2.9.9  # Para conexión sync a Dolibarr
+
+# Seguridad y autenticación
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
+
+# Cliente HTTP
 httpx==0.25.2
 
+# Utilidades
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Para auditoría y logging
+psutil==5.9.6
+ujson==5.8.0  # JSON más rápido
+
+# Desarrollo y testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Formateo de código (opcional)
+black==23.11.0
+isort==5.12.0

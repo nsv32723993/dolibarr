@@ -1,0 +1,68 @@
+// Ejemplo 1: Crear orden de picking desde Dolibarr
+POST /api/v1/picking/orders
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "dolibarr_order_id": 12345,
+  "dolibarr_order_ref": "ORDER-2024-001",
+  "warehouse_id": 1,
+  "picking_number": "PICK-2024-001",
+  "priority": 3,
+  "scheduled_date": "2024-01-15T10:00:00Z"
+}
+
+// Ejemplo 2: Añadir item a picking order
+POST /api/v1/picking/items
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "picking_order_id": 1,
+  "dolibarr_product_id": 987,
+  "product_ref": "PROD-001",
+  "product_label": "Producto de ejemplo",
+  "requested_quantity": 10,
+  "source_location_id": 1
+}
+
+// Ejemplo 3: Confirmar picking de un item
+POST /api/v1/picking/items/1/confirm
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "confirmed_quantity": 9,
+  "user_id": "dolibarr_user_123",
+  "discrepancy_type": "short",
+  "discrepancy_reason": "Stock insuficiente en ubicación"
+}
+
+// Ejemplo 4: Crear entrada de stock (recepción)
+POST /api/v1/warehouse/stock/entries
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "dolibarr_product_id": 987,
+  "product_ref": "PROD-001",
+  "location_id": 1,
+  "quantity": 50,
+  "batch_number": "BATCH-2024-001",
+  "expiry_date": "2025-12-31",
+  "dolibarr_stock_movement_id": 54321
+}
+
+// Ejemplo 5: Crear ubicación de stock
+POST /api/v1/warehouse/locations
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "warehouse_id": 1,
+  "zone_id": 2,
+  "rack": "A",
+  "level": 1,
+  "position": 1,
+  "location_code": "A-01-01",
+  "max_quantity": 100,
+  "barcode": "LOC-A0101"
+}
+
+// Ejemplo 6: Buscar stock
+POST /api/v1/warehouse/stock/search
+Headers: { "Authorization": "Bearer <JWT_TOKEN>", "X-Tenant-ID": "1" }
+{
+  "dolibarr_product_id": 987,
+  "warehouse_id": 1
+}

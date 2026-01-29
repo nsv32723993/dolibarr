@@ -2,18 +2,20 @@
 from core.database import wms_engine, Base
 from models.wms_models import *  # Tus modelos WMS
 
-def create_wms_schema():
+async def create_wms_schema():
     """Crear tablas de tu WMS local"""
     print("Creando tablas WMS...")
-    Base.metadata.create_all(bind=wms_engine)
+    async with wms_async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     print("✅ Tablas WMS creadas exitosamente")
 
-def create_sample_data():
+async def create_sample_data():
     """Crear datos de prueba para MVP"""
-    from sqlalchemy.orm import Session
-    from models.wms_models import Tenant, User, Role
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy import select
+    from core.security import get_password_hash
     
-    with Session(wms_engine) as session:
+    async with AsyncSession(wms_async_engine) as session:
         # Crear tenant de prueba
         tenant = Tenant(
             name="Empresa Demo",
@@ -22,12 +24,20 @@ def create_sample_data():
             created_at=datetime.utcnow()
         )
         session.add(tenant)
-        session.commit()
+        await session.commit()
         
-        # Crear roles
-        admin_role = Role(name="admin", description="Administrador del tenant")
-        operator_role = Role(name="operator", description="Operario de bodega")
-        session.add_all([admin_role, operator_role])
+        # Crear roles básicos
+        roles_data = [
+            {"name": "admin", "description": "Administrador del sistema"},
+            {"name": "operator", "description": "Operario de bodega"},
+            {"name": "auditor", "description": "Auditor de procesos"}
+        ]
+        
+        for role_data in roles_data:
+            role = Role(**role_data)
+            session.add(role)
+        
+        await session.commit()
         
         # Crear usuario admin
         admin_user = User(
@@ -35,14 +45,24 @@ def create_sample_data():
             email="admin@empresa.com",
             full_name="Administrador Demo",
             tenant_id=tenant.id,
+            hashed_password=get_password_hash("Admin123!"),
             is_active=True,
             created_at=datetime.utcnow()
         )
         session.add(admin_user)
+        await session.commit()
         
-        session.commit()
+        # Asignar rol admin al usuario
+        stmt = select(Role).where(Role.name == "admin")
+        result = await session.execute(stmt)
+        admin_role = result.scalar_one()
+        
+        user_role = UserRole(user_id=admin_user.id, role_id=admin_role.id)
+        session.add(user_role)
+        
+        await session.commit()
         print("✅ Datos de prueba creados")
 
 if __name__ == "__main__":
-    create_wms_schema()
-    create_sample_data()
+    asyncio.run(create_wms_schema())
+    asyncio.run(create_sample_data())

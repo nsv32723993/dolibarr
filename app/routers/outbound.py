@@ -1,15 +1,21 @@
 from fastapi import APIRouter
-from pydantic import BaseModel 
-from core.client_dolibarr import doli_client 
+from pydantic import BaseModel
+from core.client_dolibarr import doli_client
 from typing import List
-from models.schemas import OrderResponse, OrderItem 
  
-router = APIRouter() 
+router = APIRouter()
+
+
+class OrderItem(BaseModel):
+    product_id: int
+    product_ref: str
+    qty_asked: int
+
 
 class OrderResponse(BaseModel):
-    id: int
+    order_id: int
     ref: str
-    status: str
+    items: List[OrderItem]
  
 @router.get("/orders", response_model=List[OrderResponse]) 
 async def get_orders_to_pick(): 
@@ -19,14 +25,14 @@ async def get_orders_to_pick():
     # Transformamos el JSON sucio de Dolibarr a nuestro Schema limpio 
     for o in raw_orders: 
         lines = await doli_client.get_order_lines(o['id']) 
-        items = [ 
-            OrderItem( 
-                product_id=int(l['fk_product']), 
-                product_ref=l['product_ref'], 
-                qty_asked=int(float(l['qty'])) 
-            ) for l in lines 
-        ] 
-        clean_orders.append(OrderResponse(order_id=int(o['id']), ref=o['ref'], items=items)) 
+        items = [
+            OrderItem(
+                product_id=int(l['fk_product']),
+                product_ref=l.get('product_ref') or l.get('label') or '',
+                qty_asked=int(float(l.get('qty', 0)))
+            ) for l in lines
+        ]
+        clean_orders.append(OrderResponse(order_id=int(o['id']), ref=o.get('ref', ''), items=items))
          
     return clean_orders 
  
